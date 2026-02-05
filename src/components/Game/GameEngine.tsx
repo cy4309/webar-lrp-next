@@ -3,18 +3,22 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useWebcam } from './useWebcam';
 import { useCanvasRecorder } from '../../hooks/useCanvasRecorder';
+import { useHandLandmarker, getExtendedFingerCount } from '../../hooks/useHandLandmarker';
 
-type GameState = 'IDLE' | 'COUNTDOWN' | 'POSE' | 'CAPTURING' | 'FINISHED';
+type GameState = 'IDLE' | 'AWAITING_POSE' | 'COUNTDOWN' | 'POSE' | 'CAPTURING' | 'FINISHED';
 
 const POSE_DURATION = 1000; // Time in ms to hold the "Flash" or capture moment? No, maybe just countdown.
 const COUNTDOWN_START = 3;
 const TOTAL_POSES = 4;
+/** How long (ms) pose must be detected before starting countdown. */
+const POSE_GATE_STABLE_MS = 1000;
 
 export default function GameEngine() {
   // --- Refs & Hooks ---
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { videoRef, isReady: webcamReady } = useWebcam({ width: 720, height: 1280 });
   const { startRecording, stopRecording, videoUrl, isRecording } = useCanvasRecorder(canvasRef);
+  const { isReady: handReady, detectForVideo: detectHand } = useHandLandmarker();
   
   // --- State ---
   const [gameState, setGameState] = useState<GameState>('IDLE');
@@ -29,6 +33,10 @@ export default function GameEngine() {
   const poseIndexRef = useRef(0);
   const countdownRef = useRef(COUNTDOWN_START);
   const lastTickRef = useRef(0);
+  /** When pose gate became satisfied (ms). Used to require stable pose before countdown. */
+  const poseGateSatisfiedSinceRef = useRef<number | null>(null);
+  /** Throttle pose detection (run every N ms). */
+  const lastPoseCheckRef = useRef(0);
   
   // Update refs when state changes (for UI mostly)
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
@@ -160,8 +168,46 @@ export default function GameEngine() {
 
     // 2. Draw Game Elements based on State
     const state = gameStateRef.current;
-    
-    if (state === 'COUNTDOWN') {
+
+    if (state === 'AWAITING_POSE') {
+      const now = Date.now();
+      const requiredFingers = poseIndexRef.current + 1; // Pose 1 → 1 finger, Pose 2 → 2 fingers, ...
+      if (handReady && videoRef.current && now - lastPoseCheckRef.current > 100) {
+        lastPoseCheckRef.current = now;
+        const result = detectHand(videoRef.current);
+        const count = getExtendedFingerCount(result);
+        if (count === requiredFingers) {
+          if (poseGateSatisfiedSinceRef.current === null) {
+            poseGateSatisfiedSinceRef.current = now;
+          } else if (now - poseGateSatisfiedSinceRef.current >= POSE_GATE_STABLE_MS) {
+            gameStateRef.current = 'COUNTDOWN';
+            setGameState('COUNTDOWN');
+            countdownRef.current = COUNTDOWN_START;
+            setCountdown(COUNTDOWN_START);
+            lastTickRef.current = now;
+          }
+        } else {
+          poseGateSatisfiedSinceRef.current = null;
+        }
+      }
+      ctx.save();
+      ctx.strokeStyle = getPoseColor(poseIndexRef.current);
+      ctx.lineWidth = 10;
+      ctx.strokeRect(20, 20, w - 40, h - 40);
+      drawText(ctx, `Pose ${poseIndexRef.current + 1}`, h - 140, 'white', 40);
+      drawText(
+        ctx,
+        handReady ? `Show ${requiredFingers} finger${requiredFingers > 1 ? 's' : ''}` : 'Loading hand detection...',
+        h - 80,
+        'white',
+        36
+      );
+      if (poseGateSatisfiedSinceRef.current !== null) {
+        const remaining = Math.ceil((POSE_GATE_STABLE_MS - (now - poseGateSatisfiedSinceRef.current)) / 1000);
+        drawText(ctx, remaining > 0 ? `${remaining}...` : 'Get ready!', h / 2, '#88ff88', 120);
+      }
+      ctx.restore();
+    } else if (state === 'COUNTDOWN') {
         const now = Date.now();
         // Check timer logic
         if (now - lastTickRef.current > 1000) {
@@ -175,7 +221,7 @@ export default function GameEngine() {
                 setGameState('CAPTURING');
                 captureFrame();
                 
-                // Set transition to next pose or finish
+                // Next: either another AWAITING_POSE (gate for next gesture) or FINISHED
                 setTimeout(() => {
                     const nextPose = poseIndexRef.current + 1;
                     if (nextPose >= TOTAL_POSES) {
@@ -184,12 +230,12 @@ export default function GameEngine() {
                     } else {
                         poseIndexRef.current = nextPose;
                         setPoseIndex(nextPose);
-                        gameStateRef.current = 'COUNTDOWN';
-                        setGameState('COUNTDOWN');
-                        countdownRef.current = COUNTDOWN_START;
-                        setCountdown(COUNTDOWN_START);
+                        gameStateRef.current = 'AWAITING_POSE';
+                        setGameState('AWAITING_POSE');
+                        poseGateSatisfiedSinceRef.current = null;
+                        lastPoseCheckRef.current = 0;
                     }
-                }, 500); // Short flash/pause after capture
+                }, 500);
             }
         }
         
@@ -223,22 +269,24 @@ export default function GameEngine() {
     if (state !== 'FINISHED' && state !== 'IDLE') {
         requestAnimationFrame(loop);
     }
-  }, [webcamReady, captureFrame]);
+  }, [webcamReady, captureFrame, handReady, detectHand]);
 
   // --- Effect: Start Game logic helper ---
   const startGame = () => {
       setCapturedImages([]);
       setPoseIndex(0);
       setCountdown(COUNTDOWN_START);
-      setGameState('COUNTDOWN');
+      setGameState('AWAITING_POSE');
       startRecording();
-      
+
       // Init refs
       poseIndexRef.current = 0;
       countdownRef.current = COUNTDOWN_START;
       lastTickRef.current = Date.now();
-      gameStateRef.current = 'COUNTDOWN';
-      
+      gameStateRef.current = 'AWAITING_POSE';
+      poseGateSatisfiedSinceRef.current = null;
+      lastPoseCheckRef.current = 0;
+
       requestAnimationFrame(loop);
   };
 
