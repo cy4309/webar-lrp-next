@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useWebcam } from "./useWebcam";
 import { useCanvasRecorder } from "@/hooks/useCanvasRecorder";
+import { useGameAssets } from "./useGameAssets";
 import {
   useHandLandmarker,
   getExtendedFingerCount,
 } from "@/hooks/useHandLandmarker";
-import { useGameAssets } from "./useGameAssets";
 
 type GameState =
   | "IDLE"
@@ -419,7 +419,7 @@ export default function GameEngine() {
   }, [gameState, stopRecording, capturedImages]);
 
   return (
-    <div className="p-4 flex flex-col items-center justify-center min-h-screen bg-black text-white">
+    <div className="p-4 flex flex-col items-center justify-center min-h-dvh">
       {gameState === "IDLE" && (
         <div className="z-10 text-center w-full max-w-sm">
           <h1 className="text-4xl font-bold mb-8 text-blue-400">
@@ -462,7 +462,7 @@ export default function GameEngine() {
             className="absolute inset-0 w-full h-full"
           />
           {!webcamReady && (
-            <div className="absolute inset-0 flex items-center justify-center text-white bg-gray-900/80">
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80">
               Camera not ready
             </div>
           )}

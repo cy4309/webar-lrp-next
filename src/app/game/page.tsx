@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function GamePage() {
   return (
-    <main className="min-h-dvh bg-black">
+    <main className="min-h-dvh">
       <GameEngine />
     </main>
   );

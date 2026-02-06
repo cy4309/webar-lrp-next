@@ -13,7 +13,7 @@ import "@/assets/styles/globals.css";
 // });
 
 export const metadata: Metadata = {
-  title: "Next TS Demo",
+  title: "La-Roche-Posay-Web-Game",
   description: "Minimal Next.js + TypeScript + Tailwind + Redux Toolkit",
 };
 
@@ -26,7 +26,9 @@ export default function RootLayout({
     <html lang="en">
       {/* <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>{children}</body> */}
       <body>
-        <main className="w-full min-h-dvh">{children}</main>
+        <main className="w-full min-h-dvh bg-primary text-secondary">
+          {children}
+        </main>
       </body>
     </html>
   );
