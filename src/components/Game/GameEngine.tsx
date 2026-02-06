@@ -30,7 +30,7 @@ export default function GameEngine() {
     width: 720,
     height: 1280,
   });
-  const { startRecording, stopRecording, videoUrl, isRecording } =
+  const { startRecording, stopRecording, videoUrl, videoBlob, isRecording } =
     useCanvasRecorder(canvasRef);
   const { isReady: handReady, detectForVideo: detectHand } =
     useHandLandmarker();
@@ -41,6 +41,7 @@ export default function GameEngine() {
   }, [gameAssets]);
 
   // --- State ---
+  const [isIOS, setIsIOS] = useState(false);
   /** 是否需手勢偵測過關：true = 要比 1/2/3/4 才倒數拍照，false = 直接倒數拍照。預設 false。 */
   const [gestureDetectionEnabled, setGestureDetectionEnabled] = useState(false);
   const [gameState, setGameState] = useState<GameState>("IDLE");
@@ -62,6 +63,14 @@ export default function GameEngine() {
   const poseGateSatisfiedSinceRef = useRef<number | null>(null);
   /** Throttle pose detection (run every N ms). */
   const lastPoseCheckRef = useRef(0);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    const ua = navigator.userAgent;
+    const isIPadOS =
+      navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    setIsIOS(/iPad|iPhone|iPod/.test(ua) || isIPadOS);
+  }, []);
 
   // Update refs when state changes (for UI mostly)
   useEffect(() => {
@@ -204,6 +213,31 @@ export default function GameEngine() {
     const colors = ["#82f2ff", "#cbfd40", "#e398fd", "#ff6030"];
     return colors[index % colors.length];
   };
+
+  /** iOS 用 navigator.share；其他裝置用 <a download> */
+  const handleDownloadVideo = useCallback(() => {
+    if (!videoUrl && !videoBlob) return;
+    const fileName = "laroche-gameplay.webm";
+
+    if (isIOS && videoBlob && navigator.share && navigator.canShare) {
+      const file = new File([videoBlob], fileName, { type: videoBlob.type });
+      if (navigator.canShare({ files: [file] })) {
+        navigator
+          .share({ files: [file], title: "Gameplay Video" })
+          .catch(() => {});
+        return;
+      }
+    }
+
+    if (!videoUrl) return;
+    const a = document.createElement("a");
+    a.href = videoUrl;
+    a.download = fileName;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [videoUrl, videoBlob, isIOS]);
 
   // --- Game Loop ---
   const loop = useCallback(
@@ -488,15 +522,18 @@ export default function GameEngine() {
                   Generating...
                 </div>
               )}
-              {finalCompositeImage && (
-                <a
-                  href={finalCompositeImage}
-                  download="laroche-photo.jpg"
-                  className="mt-4 px-6 py-2 bg-blue-600 rounded-full hover:bg-blue-500"
-                >
-                  Download Photo
-                </a>
-              )}
+              {finalCompositeImage &&
+                (isIOS ? (
+                  <p className="mt-4 text-sm text-white/80">長按圖片即可儲存</p>
+                ) : (
+                  <a
+                    href={finalCompositeImage}
+                    download="laroche-photo.jpg"
+                    className="mt-4 px-6 py-2 bg-blue-600 rounded-full hover:bg-blue-500"
+                  >
+                    Download Photo
+                  </a>
+                ))}
             </div>
 
             {/* Result 2: Video */}
@@ -514,13 +551,13 @@ export default function GameEngine() {
                 </div>
               )}
               {videoUrl && (
-                <a
-                  href={videoUrl}
-                  download="laroche-gameplay.webm"
+                <button
+                  type="button"
+                  onClick={handleDownloadVideo}
                   className="mt-4 px-6 py-2 bg-purple-600 rounded-full hover:bg-purple-500"
                 >
                   Download Video
-                </a>
+                </button>
               )}
             </div>
           </div>
